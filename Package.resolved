@@ -1,0 +1,24 @@
+{
+  "originHash" : "10e86cdc49a532d41a969fd7370bd549bea42d0166bba84e3562ee808fa9d3f3",
+  "pins" : [
+    {
+      "identity" : "quicvarint",
+      "kind" : "remoteSourceControl",
+      "location" : "git@github.com:RichLogan/QuicVarInt.git",
+      "state" : {
+        "branch" : "temp",
+        "revision" : "c76ade238189416229366a8e958f2cc78c062e4b"
+      }
+    },
+    {
+      "identity" : "swiftlintplugins",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/SimplyDanny/SwiftLintPlugins",
+      "state" : {
+        "revision" : "b8431a26655378581890d56b95a0b59aba9f62da",
+        "version" : "0.55.1"
+      }
+    }
+  ],
+  "version" : 3
+}
