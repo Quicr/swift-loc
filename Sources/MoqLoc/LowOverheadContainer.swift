@@ -1,42 +1,127 @@
 import Foundation
 import QuicVarInt
 
+/// Possible errors that can be encountered when decoded a container.
 enum LowOverheadContainerError: Error {
+    /// The provided buffer to decode into was too small. The required size is attached.
     case bufferTooSmall(Int)
+    /// No container could be constructed from the given bitstream.
     case failedToParse
 }
 
+/// Low Overhead Media Container (LOC) per draft-mzanaty-moq-loc-03.
+/// A LOC consists of a TLV based header and one or more payloads length prefixed payloads.
 public class LowOverheadContainer {
+    /// A LOC header consists of a series of TLV encoded fields.
     public class Header {
-        public struct Field {
+        /// A LOC header field, consisting of an ID and some data.
+        public struct Field { // swiftlint:disable:this nesting
+            /// Short name for the metadata. (Not sent on the wire.)
             let shortname: String
+            /// Detailed description for the metadata. (Not sent on the wire.)
             let description: String
+            /// Identifier assigned by the registry.
             let id: Int
+            // Value of metadata.
             let value: Data
         }
 
-        public static let timestampTag: VarInt = 1
-        public static let sequenceNumberTag: VarInt = 2
-        public static let stopTag: VarInt = 3
+        static let timestampTag: VarInt = 1
+        static let sequenceNumberTag: VarInt = 2
+        static let stopTag: VarInt = 3
 
+        /// This header's timestamp, in microseconds from epoch.
         let timestamp: UInt64
+        /// This header's sequence number.
         let sequenceNumber: UInt64
         private var fields: [Field] = []
 
-        init(timestamp: Date, sequenceNumber: UInt64, since: Date = .init(timeIntervalSince1970: 0)) {
+        /// Create a LOC header.
+        /// - Parameters
+        ///   - timestamp: Media capture timestamp.
+        ///   - sequenceNumber: Media sequence number.
+        ///   - since: Date to calculate encoded timestamp relative to. Defaults to unix epoch.
+        public init(timestamp: Date, sequenceNumber: UInt64, since: Date = .init(timeIntervalSince1970: 0)) {
             self.timestamp = UInt64(timestamp.timeIntervalSince(since) * 1_000_000)
             self.sequenceNumber = sequenceNumber
         }
 
-        init(timestampUs: UInt64, sequenceNumber: UInt64) {
+        /// Create a LOC header.
+        /// - Parameters
+        ///   - timestamp: Media capture timestamp in microseconds.
+        ///   - sequenceNumber: Media sequence number.
+        ///   - since: Date to calculate encoded timestamp relative to. Defaults to unix epoch.
+        public init(timestampUs: UInt64, sequenceNumber: UInt64) {
             self.timestamp = timestampUs
             self.sequenceNumber = sequenceNumber
         }
 
-        func addField(field: Field) {
+        init(fromWire: UnsafeRawBufferPointer, noCopy: Bool, read: inout Int) throws {
+            var offset = 0
+            var timestamp: UInt64?
+            var sequenceNumber: UInt64?
+            while offset < fromWire.count {
+                // Extract tag.
+                let tag = try VarInt(fromWire: fromWire.advanced(offset))
+                offset += tag.encodedBitWidth / 8
+                guard tag != Header.stopTag else {
+                    break
+                }
+
+                // Extract length of value.
+                let length = try VarInt(fromWire: fromWire.advanced(offset))
+                offset += length.encodedBitWidth / 8
+
+                // Extract value.
+                switch tag {
+                case Header.timestampTag:
+                    let expectedSize = MemoryLayout<UInt64>.size
+                    assert(length == expectedSize)
+                    timestamp = fromWire.loadUnaligned(fromByteOffset: offset, as: UInt64.self)
+
+                case Header.sequenceNumberTag:
+                    let expectedSize = MemoryLayout<UInt64>.size
+                    assert(length == expectedSize)
+                    sequenceNumber = fromWire.loadUnaligned(fromByteOffset: offset, as: UInt64.self)
+
+                default:
+                    // Custom fields.
+                    let data: Data
+                    if noCopy {
+                        data = .init(bytesNoCopy: .init(mutating: fromWire.advanced(offset).baseAddress!),
+                                     count: Int(length),
+                                     deallocator: .none)
+                    } else {
+                        data = .init(fromWire.advanced(offset))
+                    }
+                    self.fields.append(.init(shortname: "", description: "", id: Int(tag), value: data))
+                }
+
+                offset += Int(length)
+            }
+            guard let timestamp,
+                  let sequenceNumber else {
+                throw LowOverheadContainerError.failedToParse
+            }
+            self.timestamp = timestamp
+            self.sequenceNumber = sequenceNumber
+            read = offset
+        }
+
+        /// Add a custom field to this header.
+        public func addField(field: Field) {
             self.fields.append(field)
         }
 
+        /// Retrieve a custom field from this header.
+        /// - Parameter id: The identifier of the field to retrieve.
+        /// - Returns The field or nil if not found.
+        public func getField(id: Int) -> Field? {
+            self.fields[id]
+        }
+
+        /// Return the size of the header when serialized.
+        /// - Returns Size in bytes.
         func getHeaderSize() -> Int {
             var headerSize = 0
 
@@ -54,11 +139,22 @@ public class LowOverheadContainer {
             headerSize += encodedSequenceSize.encodedBitWidth / 8
             headerSize += actualSequenceSize
 
+            // Other fields.
+            for field in self.fields {
+                headerSize += VarInt(field.id).encodedBitWidth / 8
+                headerSize += VarInt(field.value.count).encodedBitWidth / 8
+                headerSize += field.value.count
+            }
+
             // Stop.
             headerSize += Self.stopTag.encodedBitWidth / 8
             return headerSize
         }
 
+        /// Get the encoded representation of this header.
+        /// - Parameter into: The buffer to serialize the header into.
+        /// - Returns The number of bytes written into `into`.
+        /// - throws `LowOverheadContainerError.bufferTooSmall` if the provided buffer is less than the required size.
         func serialize(into: UnsafeMutableRawBufferPointer) throws -> Int {
             let required = self.getHeaderSize()
             guard into.count >= required else {
@@ -67,34 +163,45 @@ public class LowOverheadContainer {
             var offset = 0
 
             // Timestamp.
-            offset += try self.encodeTLV(into: into, tag: Self.timestampTag, value: self.timestamp)
+            offset += self.encodeTLV(into: into,
+                                     tag: Self.timestampTag,
+                                     value: self.timestamp)
 
             // Sequence.
-            offset += try self.encodeTLV(into: into.advanced(offset),
-                                         tag: Self.sequenceNumberTag,
-                                         value: self.sequenceNumber)
+            offset += self.encodeTLV(into: into.advanced(offset),
+                                     tag: Self.sequenceNumberTag,
+                                     value: self.sequenceNumber)
 
-            // TODO: Encode other fields.
+            // Other fields.
+            for field in self.fields {
+                field.value.withUnsafeBytes {
+                    offset += self.encodeTLV(into: into.advanced(offset),
+                                             tag: VarInt(field.id),
+                                             value: $0)
+                }
+            }
 
             // Stop tag.
-            try Self.stopTag.toWireFormat(into: into.advanced(offset))
+            try! Self.stopTag.toWireFormat(into: into.advanced(offset)) // swiftlint:disable:this force_try
             offset += Self.stopTag.encodedBitWidth / 8
             assert(offset == required)
             return offset
         }
 
-        private func encodeTLV(into: UnsafeMutableRawBufferPointer, tag: VarInt, value: UInt64) throws -> Int {
+        // Bounds checking should be enforced by classers, so:
+        // swiftlint:disable force_try
+        private func encodeTLV(into: UnsafeMutableRawBufferPointer, tag: VarInt, value: UInt64) -> Int {
             let tagSize = tag.encodedBitWidth / 8
             let size = MemoryLayout.size(ofValue: value)
             let encodedSize = VarInt(size)
             let required = tagSize + size + (encodedSize.encodedBitWidth / 8)
             assert(into.count >= required)
             // Tag (VarInt).
-            try tag.toWireFormat(into: into)
+            try! tag.toWireFormat(into: into)
             var index = tag.encodedBitWidth / 8
 
             // Length (VarInt).
-            try encodedSize.toWireFormat(into: into.advanced(index))
+            try! encodedSize.toWireFormat(into: into.advanced(index))
             index += encodedSize.encodedBitWidth / 8
 
             // Value (UInt64).
@@ -103,75 +210,72 @@ public class LowOverheadContainer {
             assert(index == required)
             return index
         }
+
+        private func encodeTLV(into: UnsafeMutableRawBufferPointer,
+                               tag: VarInt,
+                               value: UnsafeRawBufferPointer) -> Int {
+            let tagSize = tag.encodedBitWidth / 8
+            let encodedSize = VarInt(value.count)
+            let required = tagSize + value.count + (encodedSize.encodedBitWidth / 8)
+            assert(into.count >= required)
+            try! tag.toWireFormat(into: into)
+            var index = tag.encodedBitWidth / 8
+            try! encodedSize.toWireFormat(into: into.advanced(index))
+            index += encodedSize.encodedBitWidth / 8
+            into.copyMemory(from: value)
+            index += value.count
+            assert(index == required)
+            return index
+        }
+        // swiftlint:enable force_try
     }
 
-    let header: Header
-    let payload: [Data]
+    /// The LOC header.
+    public let header: Header
+    /// The LOC payload(s).
+    public let payload: [Data]
 
-    init(header: Header, payload: [Data]) {
+    /// Create a new LOC to serialization.
+    /// - Parameters
+    ///     - header: LOC header.
+    ///     - payload: Payloads for the container.
+    public init(header: Header, payload: [Data]) {
         self.header = header
         self.payload = payload
     }
 
-    init(encoded: UnsafeRawBufferPointer) throws {
+    /// Decode a LOC from serialized bytes.
+    /// - Parameters:
+    ///     - encoded: Pointer to encoded LOC bytes.
+    ///     - noCopy: True if the LOC should use all memory in place, false to copy.
+    ///     The caller must ensure this memory is valid for the lifetime of the LOC instance if this is enabled.
+    public init(encoded: UnsafeRawBufferPointer, noCopy: Bool) throws {
         var offset = 0
+        self.header = try .init(fromWire: encoded, noCopy: noCopy, read: &offset)
 
-        var timestamp: UInt64?
-        var sequenceNumber: UInt64?
         var payloads: [Data] = []
-
-        while offset < encoded.count {
-            // Extract tag.
-            let tag = try VarInt(fromWire: encoded.advanced(offset))
-            offset += tag.encodedBitWidth / 8
-            guard tag != Header.stopTag else {
-                break
-            }
-
-            // Extract length of value.
-            let length = try VarInt(fromWire: encoded.advanced(offset))
-            offset += length.encodedBitWidth / 8
-
-            // Extract value.
-            switch tag {
-            case Header.timestampTag:
-                let expectedSize = MemoryLayout<UInt64>.size
-                assert(length == expectedSize)
-                timestamp = encoded.loadUnaligned(fromByteOffset: offset, as: UInt64.self)
-
-            case Header.sequenceNumberTag:
-                let expectedSize = MemoryLayout<UInt64>.size
-                assert(length == expectedSize)
-                sequenceNumber = encoded.loadUnaligned(fromByteOffset: offset, as: UInt64.self)
-
-            default:
-                // TODO: Handle custom and unknown tags (via callback?).
-                break
-            }
-
-            offset += Int(length)
-        }
-
         while offset < encoded.count {
             let payloadLength = try VarInt(fromWire: encoded.advanced(offset))
             offset += payloadLength.encodedBitWidth / 8
-            let payload = Data(bytes: encoded.advanced(offset).baseAddress!,
+            let payload: Data
+            let dataPtr = encoded.advanced(offset).baseAddress!
+            if noCopy {
+                payload = Data(bytesNoCopy: .init(mutating: dataPtr),
+                               count: Int(payloadLength),
+                               deallocator: .none)
+            } else {
+                payload = Data(bytes: dataPtr,
                                count: Int(payloadLength))
+            }
             payloads.append(payload)
             offset += Int(payloadLength)
         }
-
-        guard let timestamp,
-              let sequenceNumber,
-              payloads.count > 0 else {
-            throw LowOverheadContainerError.failedToParse
-        }
-
-        self.header = .init(timestampUs: timestamp, sequenceNumber: sequenceNumber)
         self.payload = payloads
     }
 
-    func getRequiredBytes() -> Int {
+    /// Return the number of bytes this LOC instance will take up when serialized.
+    /// - Returns Size in bytes.
+    public func getRequiredBytes() -> Int {
         var required = self.header.getHeaderSize()
         for payload in self.payload {
             required += VarInt(payload.count).encodedBitWidth / 8
@@ -180,7 +284,10 @@ public class LowOverheadContainer {
         return required
     }
 
-    func serialize(into: UnsafeMutableRawBufferPointer) throws -> Int {
+    /// Serialize the LOC into the provided buffer.
+    /// - Parameter into: The buffer to write into.
+    /// - Returns The number of bytes written.
+    public func serialize(into: UnsafeMutableRawBufferPointer) throws -> Int {
         // Header.
         var offset = try self.header.serialize(into: into)
 

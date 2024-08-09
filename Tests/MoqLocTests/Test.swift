@@ -18,7 +18,7 @@ final class Test: XCTestCase {
 
         // Decode.
         try buffer.withUnsafeBytes {
-            let decoded = try LowOverheadContainer(encoded: $0)
+            let decoded = try LowOverheadContainer(encoded: $0, noCopy: true)
             XCTAssertEqual(loc.header.timestamp, decoded.header.timestamp)
             XCTAssertEqual(loc.header.sequenceNumber, decoded.header.sequenceNumber)
             XCTAssertEqual(loc.payload, decoded.payload)
