@@ -60,10 +60,12 @@ public class LowOverheadContainer {
             var offset = 0
             var timestamp: UInt64?
             var sequenceNumber: UInt64?
-            while offset < fromWire.count {
+            while offset < fromWire.count - 1 {
                 // Extract tag.
                 let tag = try VarInt(fromWire: fromWire.advanced(offset))
                 offset += tag.encodedBitWidth / 8
+
+                // If this is the stop tag, stop.
                 guard tag != Header.stopTag else {
                     break
                 }
@@ -71,6 +73,11 @@ public class LowOverheadContainer {
                 // Extract length of value.
                 let length = try VarInt(fromWire: fromWire.advanced(offset))
                 offset += length.encodedBitWidth / 8
+
+                // We should have enough space for the declared length.
+                guard offset + Int(length) <= fromWire.count else {
+                    throw LowOverheadContainerError.failedToParse
+                }
 
                 // Extract value.
                 switch tag {
@@ -88,11 +95,11 @@ public class LowOverheadContainer {
                     // Custom fields.
                     let data: Data
                     if noCopy {
-                        data = .init(bytesNoCopy: .init(mutating: fromWire.advanced(offset).baseAddress!),
+                        data = .init(bytesNoCopy: .init(mutating: try fromWire.advanced(offset).baseAddress!),
                                      count: Int(length),
                                      deallocator: .none)
                     } else {
-                        data = .init(fromWire.advanced(offset))
+                        data = .init(try fromWire.advanced(offset))
                     }
                     self.fields.append(.init(shortname: "", description: "", id: Int(tag), value: data))
                 }
@@ -168,14 +175,14 @@ public class LowOverheadContainer {
                                      value: self.timestamp)
 
             // Sequence.
-            offset += self.encodeTLV(into: into.advanced(offset),
+            offset += self.encodeTLV(into: try into.advanced(offset),
                                      tag: Self.sequenceNumberTag,
                                      value: self.sequenceNumber)
 
             // Other fields.
             for field in self.fields {
-                field.value.withUnsafeBytes {
-                    offset += self.encodeTLV(into: into.advanced(offset),
+                try field.value.withUnsafeBytes {
+                    offset += self.encodeTLV(into: try into.advanced(offset),
                                              tag: VarInt(field.id),
                                              value: $0)
                 }
@@ -251,20 +258,35 @@ public class LowOverheadContainer {
     ///     The caller must ensure this memory is valid for the lifetime of the LOC instance if this is enabled.
     public init(encoded: UnsafeRawBufferPointer, noCopy: Bool) throws {
         var offset = 0
-        self.header = try .init(fromWire: encoded, noCopy: noCopy, read: &offset)
+        do {
+            self.header = try .init(fromWire: encoded, noCopy: noCopy, read: &offset)
+        } catch BufferError.boundsError {
+            throw LowOverheadContainerError.failedToParse
+        }
 
         var payloads: [Data] = []
-        while offset < encoded.count {
+        while offset < encoded.count - 1 {
             let payloadLength = try VarInt(fromWire: encoded.advanced(offset))
+            if payloadLength == 0 {
+                // Payload lengths are not allowed, assume we're done.
+                break
+            }
             offset += payloadLength.encodedBitWidth / 8
+            guard offset + Int(payloadLength) <= encoded.count else {
+                // There is not enough space for the declared length.
+                // It might be a false positive VarInt beyond the edge of the LOC.
+                // Unwind and stop.
+                offset -= payloadLength.encodedBitWidth / 8
+                break
+            }
             let payload: Data
-            let dataPtr = encoded.advanced(offset).baseAddress!
+            let dataPtr = try! encoded.advanced(offset) // swiftlint:disable:this force_try
             if noCopy {
-                payload = Data(bytesNoCopy: .init(mutating: dataPtr),
+                payload = Data(bytesNoCopy: .init(mutating: dataPtr.baseAddress!),
                                count: Int(payloadLength),
                                deallocator: .none)
             } else {
-                payload = Data(bytes: dataPtr,
+                payload = Data(bytes: dataPtr.baseAddress!,
                                count: Int(payloadLength))
             }
             payloads.append(payload)
@@ -298,23 +320,31 @@ public class LowOverheadContainer {
             try size.toWireFormat(into: into.advanced(offset))
             offset += size.encodedBitWidth / 8
             // Payload itself.
-            into.advanced(offset).copyBytes(from: payload)
+            try into.advanced(offset).copyBytes(from: payload)
             offset += payload.count
         }
         return offset
     }
 }
 
+enum BufferError: Error {
+    case boundsError
+}
+
 extension UnsafeRawBufferPointer {
-    func advanced(_ offset: Int) -> UnsafeRawBufferPointer {
-        assert(offset < self.count)
-        return .init(start: self.baseAddress! + offset, count: self.count - offset)
+    func advanced(_ offset: Int) throws -> UnsafeRawBufferPointer {
+        guard offset < self.count else {
+            throw BufferError.boundsError
+        }
+        return .init(start: self.baseAddress!.advanced(by: offset), count: self.count - offset)
     }
 }
 
 extension UnsafeMutableRawBufferPointer {
-    func advanced(_ offset: Int) -> UnsafeMutableRawBufferPointer {
-        assert(offset < self.count)
-        return .init(start: self.baseAddress! + offset, count: self.count - offset)
+    func advanced(_ offset: Int) throws -> UnsafeMutableRawBufferPointer {
+        guard offset < self.count else {
+            throw BufferError.boundsError
+        }
+        return .init(start: self.baseAddress!.advanced(by: offset), count: self.count - offset)
     }
 }

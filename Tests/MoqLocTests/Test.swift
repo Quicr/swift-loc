@@ -3,6 +3,25 @@ import XCTest
 
 final class Test: XCTestCase {
     func testRoundtrip() throws {
+        try roundtrip(multiplier: 1)
+    }
+
+    func testLargerBuffer() throws {
+        try roundtrip(multiplier: 2)
+    }
+
+    func testBufferTooSmall() throws {
+        XCTAssertThrowsError(try roundtrip(multiplier: 0.5)) { error in
+            switch error {
+            case LowOverheadContainerError.bufferTooSmall(let size):
+                XCTAssertEqual(size, 21)
+            default:
+                XCTFail(error.localizedDescription)
+            }
+        }
+    }
+
+    func roundtrip(multiplier: Double) throws {
         let now = Date.now
         let header = LowOverheadContainer.Header(timestamp: now,
                                                  sequenceNumber: 101)
@@ -11,7 +30,7 @@ final class Test: XCTestCase {
                                        payload: [payload])
 
         // Encode.
-        var buffer = Data(count: loc.getRequiredBytes())
+        var buffer = Data(count: Int(Double(loc.getRequiredBytes()) * multiplier))
         _ = try buffer.withUnsafeMutableBytes {
             try loc.serialize(into: $0)
         }
