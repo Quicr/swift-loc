@@ -2,7 +2,7 @@ import Foundation
 import QuicVarInt
 
 /// Possible errors that can be encountered when decoded a container.
-enum LowOverheadContainerError: Error {
+public enum LowOverheadContainerError: Error {
     /// The provided buffer to decode into was too small. The required size is attached.
     case bufferTooSmall(Int)
     /// No container could be constructed from the given bitstream.
