@@ -30,10 +30,17 @@ public class LowOverheadContainer {
         static let sequenceNumberTag: VarInt = 2
         static let stopTag: VarInt = 3
 
+        let microsecondsPerSecond: TimeInterval = 1_000_000
         /// This header's timestamp, in microseconds from epoch.
-        let timestamp: UInt64
+        public let timestamp: UInt64
+
+        /// This header's timestamp, as a Date from epoch.
+        public var date: Date {
+            return Date(timeIntervalSince1970: TimeInterval(self.timestamp) / self.microsecondsPerSecond)
+        }
+
         /// This header's sequence number.
-        let sequenceNumber: UInt64
+        public let sequenceNumber: UInt64
         private var fields: [Field] = []
 
         /// Create a LOC header.
@@ -42,7 +49,7 @@ public class LowOverheadContainer {
         ///   - sequenceNumber: Media sequence number.
         ///   - since: Date to calculate encoded timestamp relative to. Defaults to unix epoch.
         public init(timestamp: Date, sequenceNumber: UInt64, since: Date = .init(timeIntervalSince1970: 0)) {
-            self.timestamp = UInt64(timestamp.timeIntervalSince(since) * 1_000_000)
+            self.timestamp = UInt64(timestamp.timeIntervalSince(since) * self.microsecondsPerSecond)
             self.sequenceNumber = sequenceNumber
         }
 

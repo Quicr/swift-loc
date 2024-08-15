@@ -43,4 +43,14 @@ final class Test: XCTestCase {
             XCTAssertEqual(loc.payload, decoded.payload)
         }
     }
+
+    func testDate() {
+        // Ensure raw timestamp to date conversions are equal (within our 1us unit).
+        let ref = Date(timeIntervalSinceReferenceDate: 0)
+        let loc = LowOverheadContainer(header: .init(timestamp: ref, sequenceNumber: 1), payload: [])
+        XCTAssertEqual(loc.header.timestamp,
+                       UInt64(ref.timeIntervalSince1970 * TimeInterval(loc.header.microsecondsPerSecond)))
+        let distance = ref.distance(to: loc.header.date)
+        XCTAssertLessThan(abs(distance), 1 / loc.header.microsecondsPerSecond)
+    }
 }
