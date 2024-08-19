@@ -14,7 +14,7 @@ let package = Package(
             targets: ["MoqLoc"])
     ],
     dependencies: [
-        .package(path: "QuicVarInt"),
+        .package(url: "git@github.com:Quicr/swift-varint.git", branch: "main"),
         .package(url: "https://github.com/SimplyDanny/SwiftLintPlugins", from: "0.55.1"),
         .package(url: "https://github.com/apple/swift-docc-plugin", from: "1.0.0")
     ],
@@ -22,7 +22,7 @@ let package = Package(
         .target(
             name: "MoqLoc",
             dependencies: [
-                .product(name: "QuicVarInt", package: "QuicVarInt")
+                .product(name: "QuicVarInt", package: "swift-varint")
             ],
             plugins: [.plugin(name: "SwiftLintBuildToolPlugin", package: "SwiftLintPlugins")]
         ),

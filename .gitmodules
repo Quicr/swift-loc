@@ -1,3 +1,0 @@
-[submodule "QuicVarInt"]
-	path = QuicVarInt
-	url = git@github.com:RichLogan/QuicVarInt.git

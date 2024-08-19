@@ -16,12 +16,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - name: Checkout QuicVarInt (temporary)
-      uses: actions/checkout@v4
-      with:
-        repository: RichLogan/QuicVarInt
-        ssh-key: ${{ secrets.VARINT_DEPLOY }}
-        path: QuicVarInt
     - name: Build
       run: swift build -v
     - name: Run tests
