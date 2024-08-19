@@ -16,8 +16,12 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Checkout QuicVarInt (temporary)
+      uses: actions/checkout@v4
       with:
-        submodules: 'true'
+        repository: RichLogan/QuicVarInt
+        token: ${{ secrets.VARINT_DEPLOY }}
+        path: QuicVarInt
     - name: Build
       run: swift build -v
     - name: Run tests
