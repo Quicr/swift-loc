@@ -1,15 +1,6 @@
 {
-  "originHash" : "0b06f9b289d7044cb914d6b3e88f575a3263a770f4390d1cd7cad1d2e6b19ea4",
+  "originHash" : "7e8055a7b8582a8da52cc771d88019b7cce15eedfb276efed92969d80f0c3683",
   "pins" : [
-    {
-      "identity" : "quicvarint",
-      "kind" : "remoteSourceControl",
-      "location" : "git@github.com:RichLogan/QuicVarInt.git",
-      "state" : {
-        "branch" : "temp",
-        "revision" : "c76ade238189416229366a8e958f2cc78c062e4b"
-      }
-    },
     {
       "identity" : "swift-docc-plugin",
       "kind" : "remoteSourceControl",
