@@ -20,7 +20,7 @@ jobs:
       uses: actions/checkout@v4
       with:
         repository: RichLogan/QuicVarInt
-        token: ${{ secrets.VARINT_DEPLOY }}
+        ssh-key: ${{ secrets.VARINT_DEPLOY }}
         path: QuicVarInt
     - name: Build
       run: swift build -v
