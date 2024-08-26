@@ -1,0 +1,38 @@
+# This workflow will build a Swift project
+# For more information see: https://docs.github.com/en/actions/automating-builds-and-tests/building-and-testing-swift
+
+name: Docs
+
+on:
+  push:
+    branches: [ "main" ]
+
+concurrency:
+    group: "pages"
+    cancel-in-progress: true  
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+    - uses: actions/checkout@v4
+    - name: Build Docs
+      run: make doc
+    - name: Upload docs
+      uses: actions/upload-pages-artifact@v1
+      with:
+        path: ./docs
+
+  deploy:
+    needs: build
+    permissions:
+        pages: write
+        id-token: write
+    environment:
+        name: github-pages
+        url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
