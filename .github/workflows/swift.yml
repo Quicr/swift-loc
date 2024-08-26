@@ -16,9 +16,6 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
-    - uses: webfactory/ssh-agent@v0.9.0
-      with:
-        ssh-private-key: ${{ secrets.VARINT_DEPLOY }}
     - name: Build
       run: swift build -v
     - name: Run tests

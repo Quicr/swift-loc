@@ -1,5 +1,5 @@
 {
-  "originHash" : "68f9c9b545cee290d94be5b6b683673103cab220cf306330ffe1d0ead6f5b150",
+  "originHash" : "a8804c27d71cab25629a1fac6c38875747a38ce3cffd590a0cd8439922f1289b",
   "pins" : [
     {
       "identity" : "swift-docc-plugin",
@@ -22,7 +22,7 @@
     {
       "identity" : "swift-varint",
       "kind" : "remoteSourceControl",
-      "location" : "git@github.com:Quicr/swift-varint.git",
+      "location" : "https://github.com/Quicr/swift-varint",
       "state" : {
         "branch" : "main",
         "revision" : "9dc20b3ccb6cdfb6d6a78422f50c97cfb1f6a3f8"
