@@ -16,15 +16,8 @@ jobs:
     runs-on: macos-latest
     steps:
     - uses: actions/checkout@v4
-    - uses: actions/configure-pages@v5
     - name: Build Docs
-      uses: fwcd/swift-docc-action@v1
-      with:
-        target: MoqLoc
-        output: ./docs
-        transform-for-static-hosting: 'true'
-        disable-indexing: 'true'
-        hosting-base-path: 'swift-loc'
+      run: make doc
     - name: Upload docs
       uses: actions/upload-pages-artifact@v3
       with:
@@ -34,7 +27,6 @@ jobs:
   deploy:
     needs: build
     permissions:
-        contents: read
         pages: write
         id-token: write
     environment:
