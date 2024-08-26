@@ -23,4 +23,4 @@ doc:
 	swift package --allow-writing-to-directory ./docs \
 	generate-documentation --target MoqLoc --output-path ./docs \
 	--disable-indexing --transform-for-static-hosting --hosting-base-path swift-loc && \
-	echo "<script>window.location.href += \"documentation/MoqLoc\"</script>" > docs/index.html
+	echo "<script>window.location.href += \"documentation/moqloc\"</script>" > docs/index.html
