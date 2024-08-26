@@ -19,9 +19,10 @@ jobs:
     - name: Build Docs
       run: make doc
     - name: Upload docs
-      uses: actions/upload-pages-artifact@v1
+      uses: actions/upload-pages-artifact@v3
       with:
         path: ./docs
+        name: github-pages
 
   deploy:
     needs: build
